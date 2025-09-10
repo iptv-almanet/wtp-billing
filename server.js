@@ -22,18 +22,22 @@ const WA_TOKEN = process.env.WHATSAPP_TOKEN;
 const WA_PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
-// DB helpers
-import dbPkg from './db.js';
+// Prepare statements
 const stmtInsertCustomer = db.prepare(`INSERT INTO customers(name, whatsapp, address) VALUES(?,?,?)`);
 const stmtListCustomers = db.prepare(`SELECT * FROM customers ORDER BY id DESC`);
+const stmtGetCustomer = db.prepare(`SELECT * FROM customers WHERE id = ?`);
+const stmtUpdateCustomer = db.prepare(`UPDATE customers SET name=?, whatsapp=?, address=? WHERE id=?`);
+const stmtDeleteCustomer = db.prepare(`DELETE FROM customers WHERE id=?`);
+
 const stmtInsertBill = db.prepare(`INSERT INTO bills(customer_id, period, usage_m3, tariff_per_m3, admin_fee, total_amount) VALUES(?,?,?,?,?,?)`);
 const stmtListBills = db.prepare(`SELECT b.*, c.name, c.whatsapp FROM bills b JOIN customers c ON c.id=b.customer_id ORDER BY b.id DESC`);
 const stmtGetBill = db.prepare(`SELECT b.*, c.name, c.address, c.whatsapp FROM bills b JOIN customers c ON c.id=b.customer_id WHERE b.id=?`);
 const stmtUpdateBillStatus = db.prepare(`UPDATE bills SET status=? WHERE id=?`);
 
-// Routes
+// Routes - Customers
 app.get('/api/customers', (req, res) => {
-  res.json(stmtListCustomers.all());
+  const rows = stmtListCustomers.all();
+  res.json(rows);
 });
 
 app.post('/api/customers', (req, res) => {
@@ -43,14 +47,33 @@ app.post('/api/customers', (req, res) => {
   res.json({ id: info.lastInsertRowid });
 });
 
+app.put('/api/customers/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const { name, whatsapp, address } = req.body;
+  const existing = stmtGetCustomer.get(id);
+  if (!existing) return res.status(404).json({ error: 'Pelanggan tidak ditemukan' });
+  const info = stmtUpdateCustomer.run(name || existing.name, whatsapp || existing.whatsapp, address || existing.address, id);
+  res.json({ ok: true, changes: info.changes });
+});
+
+app.delete('/api/customers/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const existing = stmtGetCustomer.get(id);
+  if (!existing) return res.status(404).json({ error: 'Pelanggan tidak ditemukan' });
+  stmtDeleteCustomer.run(id);
+  res.json({ ok: true });
+});
+
+// Routes - Bills
 app.get('/api/bills', (req, res) => {
-  res.json(stmtListBills.all());
+  const rows = stmtListBills.all();
+  res.json(rows);
 });
 
 app.post('/api/bills', (req, res) => {
   const { customer_id, period, usage_m3, tariff_per_m3, admin_fee } = req.body;
   if (!customer_id || !period || usage_m3 == null || !tariff_per_m3) {
-    return res.status(400).json({ error: 'field wajib' });
+    return res.status(400).json({ error: 'customer_id, period, usage_m3, tariff_per_m3 wajib' });
   }
   const total = Math.round(Number(usage_m3) * Number(tariff_per_m3)) + Number(admin_fee || 0);
   const info = stmtInsertBill.run(customer_id, period, usage_m3, tariff_per_m3, admin_fee || 0, total);
@@ -70,7 +93,7 @@ app.post('/api/bills/:id/mark-paid', (req, res) => {
   res.json({ ok: true });
 });
 
-// Send WA
+// Send WA helper
 async function sendWhatsAppText({ to, text }) {
   const url = `https://graph.facebook.com/v20.0/${WA_PHONE_ID}/messages`;
   const body = {
@@ -84,7 +107,10 @@ async function sendWhatsAppText({ to, text }) {
     headers: { 'Authorization': `Bearer ${WA_TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(err);
+  }
   return r.json();
 }
 
@@ -104,17 +130,21 @@ app.post('/api/bills/:id/send-wa', async (req, res) => {
     ].filter(Boolean).join('\n');
 
     const result = await sendWhatsAppText({ to: bill.whatsapp, text: message });
+
     if (bill.status === 'UNPAID') stmtUpdateBillStatus.run('SENT', bill.id);
     res.json({ ok: true, result });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('WA send error', e.message || e);
+    res.status(500).json({ error: e.message || String(e) });
   }
 });
 
+// Invoice page
 app.get('/invoice/:id', (req, res) => {
   const bill = stmtGetBill.get(req.params.id);
   if (!bill) return res.status(404).send('Tagihan tidak ditemukan');
-  res.send(`<html><body><h2>Invoice #${bill.id}</h2><p>Total: Rp${bill.total_amount}</p></body></html>`);
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Invoice #${bill.id}</title></head><body><div style="max-width:700px;margin:24px auto;font-family:system-ui,Arial;"><h2>Invoice #${bill.id}</h2><div>${bill.name} • ${bill.address || ''} • ${bill.whatsapp}</div><hr/><div>Periode: <strong>${bill.period}</strong></div><div>Pemakaian: <strong>${bill.usage_m3} m³</strong></div><div>Tarif/m³: <strong>Rp${bill.tariff_per_m3}</strong></div><div>Biaya Admin: <strong>Rp${bill.admin_fee}</strong></div><div>Total: <strong>Rp${bill.total_amount}</strong></div><div>Status: <strong>${bill.status}</strong></div><hr/><form action="/api/bills/${bill.id}/mark-paid" method="POST"><button type="submit">Konfirmasi Pembayaran</button></form></div></body></html>`;
+  res.send(html);
 });
 
 app.listen(PORT, () => console.log(`WTP Billing berjalan di ${PORT}`));
