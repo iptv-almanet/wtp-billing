@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WTP Billing Admin</title>
+    <style>
+      body { font-family: sans-serif; margin: 20px; }
+      h1, h2 { color: #2c3e50; }
+      table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+      th { background: #f4f4f4; }
+      form { margin-bottom: 20px; }
+      input, select { margin: 5px 0; padding: 6px; width: 100%; }
+      button { padding: 6px 12px; margin-top: 8px; cursor: pointer; }
+      .section { margin-bottom: 40px; }
+    </style>
+  </head>
+  <body>
+    <h1>WTP Billing Admin</h1>
+
+    <div class="section">
+      <h2>Tambah Pelanggan</h2>
+      <form id="customerForm">
+        <input type="text" name="name" placeholder="Nama" required />
+        <input type="text" name="whatsapp" placeholder="Nomor WhatsApp (62...)" required />
+        <input type="text" name="address" placeholder="Alamat" />
+        <button type="submit">Tambah Pelanggan</button>
+      </form>
+      <table id="customersTable">
+        <thead><tr><th>ID</th><th>Nama</th><th>WA</th><th>Alamat</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Buat Tagihan</h2>
+      <form id="billForm">
+        <select name="customer_id" required></select>
+        <input type="text" name="period" placeholder="Periode (contoh: Sep-2025)" required />
+        <input type="number" name="usage_m3" placeholder="Pemakaian (m3)" required />
+        <input type="number" name="tariff_per_m3" placeholder="Tarif per m3" required />
+        <input type="number" name="admin_fee" placeholder="Biaya admin" value="0" />
+        <button type="submit">Buat Tagihan</button>
+      </form>
+      <table id="billsTable">
+        <thead><tr><th>ID</th><th>Pelanggan</th><th>Periode</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
